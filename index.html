@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PhysicsViz - 物理公式可视化</title>
+  
+  <!-- 1. 引入 Tailwind CSS v3 (JIT 模式) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 2. 引入 React 和 ReactDOM UMD -->
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  
+  <!-- 3. 引入 Babel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+  <!-- 字体 -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* 强制全屏，防止 Studio iframe 滚动条双重出现 */
+    html, body, #root { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
+    
+    /* 自定义滚动条 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    
+    /* 范围输入框美化 */
+    input[type=range] { -webkit-appearance: none; background: transparent; }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+      background: #06b6d4; cursor: pointer; margin-top: -6px; box-shadow: 0 0 5px rgba(0,0,0,0.3);
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%; height: 4px; cursor: pointer; background: #334155; border-radius: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- 主程序 -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // ==========================================
+    // 1. 图标组件 (SVG)
+    // ==========================================
+    const Icon = ({ path, size = 24, className = "", onClick }) => (
+      <svg 
+        xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" 
+        fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" 
+        className={className} onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'inherit' }}
+      >
+        {path}
+      </svg>
+    );
+
+    const Icons = {
+      Activity: (p) => <Icon {...p} path={<><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></>} />,
+      ArrowRight: (p) => <Icon {...p} path={<><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></>} />,
+      BookOpen: (p) => <Icon {...p} path={<><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></>} />,
+      CircleDot: (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></>} />,
+      MoveDown: (p) => <Icon {...p} path={<><path d="M8 18l4 4 4-4"/><path d="M12 2v20"/></>} />,
+      RefreshCcw: (p) => <Icon {...p} path={<><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>} />,
+      Settings2: (p) => <Icon {...p} path={<><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></>} />,
+      Menu: (p) => <Icon {...p} path={<><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></>} />,
+      X: (p) => <Icon {...p} path={<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>} />,
+      Play: (p) => <Icon {...p} path={<><polygon points="5 3 19 12 5 21 5 3"/></>} />,
+      Pause: (p) => <Icon {...p} path={<><rect width="4" height="16" x="6" y="4"/><rect width="4" height="16" x="14" y="4"/></>} />,
+      RotateCcw: (p) => <Icon {...p} path={<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>} />,
+      Send: (p) => <Icon {...p} path={<><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>} />,
+      Waves: (p) => <Icon {...p} path={<><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></>} />
+    };
+
+    // ==========================================
+    // 2. 配置数据
+    // ==========================================
+    const SIMULATIONS = [
+      {
+        id: 'FREE_FALL',
+        name: '自由落体',
+        nameEn: 'Free Fall',
+        description: '物体只在重力作用下从静止开始下落的运动。忽略空气阻力，物体做匀加速直线运动。',
+        formula: 'h = ½gt²',
+        variables: [
+          { key: 'g', label: '重力加速度 (g)', min: 1, max: 20, step: 0.1, defaultValue: 9.8, unit: 'm/s²' },
+          { key: 'height', label: '高度 (h)', min: 10, max: 100, step: 1, defaultValue: 50, unit: 'm' }
+        ]
+      },
+      {
+        id: 'PROJECTILE',
+        name: '抛体运动',
+        nameEn: 'Projectile Motion',
+        description: '物体以一定的初速度斜向抛出，仅在重力作用下的运动。水平方向为匀速直线运动，竖直方向为自由落体运动（或竖直上抛）。',
+        formula: 'y = x tanθ - gx²/(2v₀²cos²θ)',
+        variables: [
+          { key: 'v0', label: '初速度 (v₀)', min: 10, max: 50, step: 1, defaultValue: 25, unit: 'm/s' },
+          { key: 'angle', label: '角度 (θ)', min: 0, max: 90, step: 1, defaultValue: 45, unit: '°' },
+          { key: 'g', label: '重力 (g)', min: 1, max: 20, step: 0.1, defaultValue: 9.8, unit: 'm/s²' }
+        ]
+      },
+      {
+        id: 'PENDULUM',
+        name: '单摆',
+        nameEn: 'Pendulum',
+        description: '在细线一端悬挂质点，在重力作用下在垂直平面内摆动。当摆角较小时(θ<5°)，可近似为简谐运动。',
+        formula: 'T ≈ 2π√(L/g)',
+        variables: [
+          { key: 'length', label: '摆长 (L)', min: 0.5, max: 3, step: 0.1, defaultValue: 1.5, unit: 'm' },
+          { key: 'gravity', label: '重力加速度 (g)', min: 1, max: 20, step: 0.1, defaultValue: 9.8, unit: 'm/s²' },
+          { key: 'theta0', label: '初始角度 (θ)', min: 5, max: 45, step: 1, defaultValue: 30, unit: '°' }
+        ]
+      },
+      {
+        id: 'SPRING',
+        name: '弹簧振子',
+        nameEn: 'Spring Oscillator',
+        description: '弹簧振子是简谐运动的典型模型。物体受到的回复力 F 与位移 x 成正比，方向相反。',
+        formula: 'F = -kx, T = 2π√(m/k)',
+        variables: [
+          { key: 'k', label: '劲度系数 (k)', min: 1, max: 50, step: 1, defaultValue: 10, unit: 'N/m' },
+          { key: 'mass', label: '质量 (m)', min: 0.1, max: 5, step: 0.1, defaultValue: 1.0, unit: 'kg' },
+          { key: 'amplitude', label: '振幅 (A)', min: 20, max: 150, step: 10, defaultValue: 100, unit: 'px' }
+        ]
+      },
+      {
+        id: 'CIRCULAR',
+        name: '匀速圆周',
+        nameEn: 'Circular Motion',
+        description: '质点沿圆周运动，线速度大小不变。向心力方向始终指向圆心，只改变速度方向不改变大小。',
+        formula: 'F = mv²/r',
+        variables: [
+          { key: 'radius', label: '半径 (r)', min: 50, max: 200, step: 10, defaultValue: 100, unit: 'px' },
+          { key: 'velocity', label: '线速度 (v)', min: 1, max: 10, step: 0.5, defaultValue: 3, unit: 'm/s' }
+        ]
+      }
+    ];
+
+    // ==========================================
+    // 3. 通用 Hooks
+    // ==========================================
+    // 使用 ResizeObserver 监听容器大小变化，比 window.resize 更准确
+    function useCanvasSize(containerRef, canvasRef) {
+      useEffect(() => {
+        if (!containerRef.current || !canvasRef.current) return;
+        const updateSize = () => {
+          if (containerRef.current && canvasRef.current) {
+            canvasRef.current.width = containerRef.current.clientWidth;
+            canvasRef.current.height = containerRef.current.clientHeight;
+          }
+        };
+        updateSize();
+        const observer = new ResizeObserver(updateSize);
+        observer.observe(containerRef.current);
+        return () => observer.disconnect();
+      }, []);
+    }
+
+    // ==========================================
+    // 4. 模拟组件
+    // ==========================================
+
+    // --- 自由落体 ---
+    const FreeFallSimulation = ({ params }) => {
+      const canvasRef = useRef(null);
+      const containerRef = useRef(null);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [simTime, setSimTime] = useState(0);
+      
+      const state = useRef({ y: 0, v: 0, lastFrame: 0, active: false });
+      const { g, height } = params;
+      const SCALE = 4; // 像素/米
+
+      useCanvasSize(containerRef, canvasRef);
+
+      const reset = () => {
+        setIsPlaying(false);
+        setSimTime(0);
+        state.current = { y: 0, v: 0, lastFrame: 0, active: false };
+        draw();
+      };
+
+      const togglePlay = () => {
+        const next = !isPlaying;
+        setIsPlaying(next);
+        state.current.active = next;
+        if (next) {
+          state.current.lastFrame = performance.now();
+          requestAnimationFrame(loop);
+        }
+      };
+
+      const draw = () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (!ctx) return;
+        const { width: w, height: h } = canvasRef.current;
+        
+        ctx.clearRect(0, 0, w, h);
+        
+        const groundY = h - 40;
+        const totalHeightPx = height * SCALE;
+        const startY = groundY - totalHeightPx;
+        const rulerX = w / 2 - 80;
+
+        // 地面
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(0, groundY, w, 40);
+
+        // 标尺
+        ctx.beginPath();
+        ctx.strokeStyle = '#475569';
+        ctx.moveTo(rulerX, groundY);
+        ctx.lineTo(rulerX, Math.max(20, startY - 20));
+        ctx.stroke();
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px Inter';
+        for(let m = 0; m <= height; m+=10) {
+          const y = groundY - m * SCALE;
+          ctx.beginPath();
+          ctx.moveTo(rulerX - 5, y);
+          ctx.lineTo(rulerX + 5, y);
+          ctx.stroke();
+          ctx.fillText(m + 'm', rulerX - 30, y + 3);
+        }
+
+        // 小球
+        const currentY = startY + state.current.y * SCALE;
+        const renderY = Math.min(currentY, groundY - 15);
+        
+        ctx.beginPath();
+        ctx.arc(w/2, renderY, 15, 0, Math.PI*2);
+        ctx.fillStyle = '#06b6d4';
+        ctx.fill();
+
+        // 数据面板
+        drawStats(ctx, [
+          `高度: ${(height - state.current.y).toFixed(1)} m`,
+          `速度: ${state.current.v.toFixed(1)} m/s`,
+          `时间: ${simTime.toFixed(2)} s`
+        ]);
+      };
+      
+      const drawStats = (ctx, lines) => {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.fillRect(10, 10, 160, 20 + lines.length * 20);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '13px monospace';
+        lines.forEach((line, i) => {
+          ctx.fillText(line, 20, 30 + i * 20);
+        });
+      };
+
+      const loop = (time) => {
+        if (!state.current.active) return;
+        const dt = Math.min((time - state.current.lastFrame) / 1000, 0.1);
+        state.current.lastFrame = time;
+
+        if (state.current.y < height) {
+          state.current.v += g * dt;
+          state.current.y += state.current.v * dt;
+          setSimTime(prev => prev + dt);
+        } else {
+          state.current.y = height;
+          state.current.active = false;
+          setIsPlaying(false);
+        }
+        draw();
+        if (state.current.active) requestAnimationFrame(loop);
+      };
+
+      useEffect(() => { reset(); }, [g, height]);
+      useEffect(() => { setTimeout(draw, 50); }, [g, height, simTime]);
+
+      return (
+        <div ref={containerRef} className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden">
+          <canvas ref={canvasRef} className="block" />
+          <Controls isPlaying={isPlaying} togglePlay={togglePlay} reset={reset} />
+        </div>
+      );
+    };
+
+    // --- 抛体运动 ---
+    const ProjectileSimulation = ({ params }) => {
+      const canvasRef = useRef(null);
+      const containerRef = useRef(null);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [simTime, setSimTime] = useState(0);
+      
+      const { v0, angle, g } = params;
+      const state = useRef({ x: 0, y: 0, vy: 0, vx: 0, active: false, lastFrame: 0, path: [] });
+      const SCALE = 5; // 像素/米
+
+      useCanvasSize(containerRef, canvasRef);
+
+      const reset = () => {
+        setIsPlaying(false);
+        setSimTime(0);
+        state.current = { 
+          x: 0, y: 0, 
+          vx: 0, vy: 0, 
+          active: false, lastFrame: 0, path: [] 
+        };
+        draw();
+      };
+
+      const togglePlay = () => {
+        const next = !isPlaying;
+        setIsPlaying(next);
+        state.current.active = next;
+        if (next) {
+          const rad = (angle * Math.PI) / 180;
+          if (state.current.x === 0 && state.current.y === 0) {
+            state.current.vx = v0 * Math.cos(rad);
+            state.current.vy = v0 * Math.sin(rad); // 初始向上
+          }
+          state.current.lastFrame = performance.now();
+          requestAnimationFrame(loop);
+        }
+      };
+
+      const draw = () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (!ctx) return;
+        const { width: w, height: h } = canvasRef.current;
+        const groundY = h - 40;
+        const startX = 40;
+        
+        ctx.clearRect(0, 0, w, h);
+
+        // Grid
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let i=0; i<w; i+=50) { ctx.moveTo(i,0); ctx.lineTo(i,h); }
+        for(let i=0; i<h; i+=50) { ctx.moveTo(0,i); ctx.lineTo(w,i); }
+        ctx.stroke();
+
+        // Ground
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(0, groundY, w, 40);
+
+        // Path
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.5)';
+        ctx.lineWidth = 2;
+        if (state.current.path.length > 0) {
+          state.current.path.forEach((pt, i) => {
+            const px = startX + pt.x * SCALE;
+            const py = groundY - pt.y * SCALE;
+            if (i===0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+        }
+
+        // Ball
+        const cx = startX + state.current.x * SCALE;
+        const cy = groundY - state.current.y * SCALE;
+        
+        // Cannon
+        ctx.save();
+        ctx.translate(startX, groundY);
+        ctx.rotate(-(angle * Math.PI)/180);
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(0, -5, 30, 10);
+        ctx.restore();
+
+        if (cy < groundY + 15) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#06b6d4';
+          ctx.fill();
+        }
+
+        // Stats
+        drawStats(ctx, [
+          `X位移: ${state.current.x.toFixed(1)} m`,
+          `Y高度: ${state.current.y.toFixed(1)} m`,
+          `速度V: ${Math.sqrt(state.current.vx**2 + state.current.vy**2).toFixed(1)} m/s`,
+          `时间: ${simTime.toFixed(2)} s`
+        ]);
+      };
+
+      const drawStats = (ctx, lines) => {
+        const w = ctx.canvas.width;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.fillRect(w - 180, 10, 170, 20 + lines.length * 20);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '13px monospace';
+        lines.forEach((line, i) => {
+          ctx.fillText(line, w - 170, 30 + i * 20);
+        });
+      };
+
+      const loop = (time) => {
+        if (!state.current.active) return;
+        const dt = Math.min((time - state.current.lastFrame) / 1000, 0.1) * 2; // 2x speed for better viz
+        state.current.lastFrame = time;
+
+        state.current.vy -= g * dt;
+        state.current.x += state.current.vx * dt;
+        state.current.y += state.current.vy * dt;
+        setSimTime(t => t + dt);
+
+        state.current.path.push({x: state.current.x, y: state.current.y});
+
+        if (state.current.y < 0) {
+          state.current.y = 0;
+          state.current.active = false;
+          setIsPlaying(false);
+        }
+
+        draw();
+        if (state.current.active) requestAnimationFrame(loop);
+      };
+
+      useEffect(() => { reset(); }, [v0, angle, g]);
+      useEffect(() => { setTimeout(draw, 50); }, [params]);
+
+      return (
+        <div ref={containerRef} className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden">
+          <canvas ref={canvasRef} className="block" />
+          <Controls isPlaying={isPlaying} togglePlay={togglePlay} reset={reset} />
+        </div>
+      );
+    };
+
+    // --- 单摆 ---
+    const PendulumSimulation = ({ params }) => {
+      const canvasRef = useRef(null);
+      const containerRef = useRef(null);
+      const requestRef = useRef(null);
+      const { length, gravity, theta0 } = params;
+      const state = useRef({ theta: 0, omega: 0 });
+
+      useCanvasSize(containerRef, canvasRef);
+
+      useEffect(() => {
+        state.current.theta = (theta0 * Math.PI) / 180;
+        state.current.omega = 0;
+      }, [theta0, length]);
+
+      const animate = () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (!ctx) return;
+        const { width: w, height: h } = canvasRef.current;
+        const dt = 0.016;
+
+        const alpha = (-1 * gravity / length) * Math.sin(state.current.theta);
+        state.current.omega += alpha * dt;
+        state.current.omega *= 0.998; 
+        state.current.theta += state.current.omega * dt;
+
+        ctx.clearRect(0, 0, w, h);
+        const originX = w / 2;
+        const originY = 60;
+        const pxPerMeter = Math.min(w, h) / 3.5;
+        const lenPx = length * pxPerMeter;
+        
+        const bobX = originX + lenPx * Math.sin(state.current.theta);
+        const bobY = originY + lenPx * Math.cos(state.current.theta);
+
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(originX - 40, originY - 4, 80, 8);
+        ctx.beginPath();
+        ctx.moveTo(originX, originY);
+        ctx.lineTo(bobX, bobY);
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(bobX, bobY, 20, 0, Math.PI * 2);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fill();
+        
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '16px monospace';
+        ctx.fillText(`角度: ${(state.current.theta * 180 / Math.PI).toFixed(1)}°`, 20, h - 30);
+        ctx.fillText(`周期 T ≈ ${(2 * Math.PI * Math.sqrt(length/gravity)).toFixed(2)} s`, 20, h - 50);
+
+        requestRef.current = requestAnimationFrame(animate);
+      };
+
+      useEffect(() => {
+        requestRef.current = requestAnimationFrame(animate);
+        return () => cancelAnimationFrame(requestRef.current);
+      }, [gravity, length, theta0]);
+
+      return (
+        <div ref={containerRef} className="w-full h-full bg-slate-900 rounded-lg overflow-hidden">
+          <canvas ref={canvasRef} className="block" />
+        </div>
+      );
+    };
+
+    // --- 弹簧振子 ---
+    const SpringSimulation = ({ params }) => {
+      const canvasRef = useRef(null);
+      const containerRef = useRef(null);
+      const requestRef = useRef(null);
+      const { k, mass, amplitude } = params;
+      const timeRef = useRef(0);
+
+      useCanvasSize(containerRef, canvasRef);
+
+      const animate = () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (!ctx) return;
+        const { width: w, height: h } = canvasRef.current;
+        const dt = 0.016;
+        timeRef.current += dt;
+
+        const omega = Math.sqrt(k / mass);
+        const displacement = amplitude * Math.cos(omega * timeRef.current);
+        const equilibriumX = w / 2;
+        const blockX = equilibriumX + displacement;
+        const groundY = h / 2 + 50;
+        const wallX = 50;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Wall & Ground
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(0, groundY, w, 10); // Floor
+        ctx.fillRect(wallX, groundY - 100, 10, 100); // Wall
+
+        // Spring
+        ctx.beginPath();
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 3;
+        const springSegments = 20;
+        const springStart = wallX + 10;
+        const springEnd = blockX;
+        const segmentLen = (springEnd - springStart) / springSegments;
+        
+        ctx.moveTo(springStart, groundY - 40);
+        for (let i = 1; i <= springSegments; i++) {
+          const x = springStart + i * segmentLen;
+          const y = groundY - 40 + (i % 2 === 0 ? 0 : (i%4===1 ? -15 : 15));
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Block
+        ctx.fillStyle = '#ec4899';
+        ctx.fillRect(blockX, groundY - 80, 80, 80);
+        ctx.strokeStyle = 'white';
+        ctx.strokeRect(blockX, groundY - 80, 80, 80);
+        
+        // Equilibrium line
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = '#64748b';
+        ctx.beginPath();
+        ctx.moveTo(equilibriumX + 40, groundY - 120);
+        ctx.lineTo(equilibriumX + 40, groundY + 20);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText('平衡位置', equilibriumX + 10, groundY + 30);
+
+        // Stats
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '14px monospace';
+        const force = -k * (displacement / 100); // simplify unit for display
+        ctx.fillText(`位移 x: ${Math.round(displacement)}`, 20, 30);
+        ctx.fillText(`回复力 F: ${force.toFixed(1)} N`, 20, 50);
+
+        requestRef.current = requestAnimationFrame(animate);
+      };
+
+      useEffect(() => {
+        timeRef.current = 0; // reset time on param change
+        requestRef.current = requestAnimationFrame(animate);
+        return () => cancelAnimationFrame(requestRef.current);
+      }, [k, mass, amplitude]);
+
+      return (
+        <div ref={containerRef} className="w-full h-full bg-slate-900 rounded-lg overflow-hidden">
+          <canvas ref={canvasRef} className="block" />
+        </div>
+      );
+    };
+
+    // --- 圆周运动 ---
+    const CircularSimulation = ({ params }) => {
+      const canvasRef = useRef(null);
+      const containerRef = useRef(null);
+      const requestRef = useRef(null);
+      const { radius, velocity } = params;
+      const angleRef = useRef(0);
+
+      useCanvasSize(containerRef, canvasRef);
+
+      const animate = () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (!ctx) return;
+        const { width: w, height: h } = canvasRef.current;
+        
+        const angularVel = velocity / (radius * 0.05); 
+        angleRef.current += angularVel * 0.016;
+
+        ctx.clearRect(0, 0, w, h);
+        const cx = w / 2;
+        const cy = h / 2;
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = '#334155';
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const x = cx + Math.cos(angleRef.current) * radius;
+        const y = cy + Math.sin(angleRef.current) * radius;
+
+        const forceLen = Math.min((velocity * velocity / radius) * 400, radius - 10);
+        drawArrow(ctx, x, y, x - Math.cos(angleRef.current)*forceLen, y - Math.sin(angleRef.current)*forceLen, '#ef4444', 'F');
+        drawArrow(ctx, x, y, x - Math.sin(angleRef.current)*60, y + Math.cos(angleRef.current)*60, '#22c55e', 'v');
+
+        ctx.beginPath();
+        ctx.arc(x, y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = '#8b5cf6';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+
+        requestRef.current = requestAnimationFrame(animate);
+      };
+
+      const drawArrow = (ctx, x1, y1, x2, y2, color, label) => {
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        const ang = Math.atan2(y2 - y1, x2 - x1);
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - 8 * Math.cos(ang - Math.PI/6), y2 - 8 * Math.sin(ang - Math.PI/6));
+        ctx.lineTo(x2 - 8 * Math.cos(ang + Math.PI/6), y2 - 8 * Math.sin(ang + Math.PI/6));
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        ctx.font = '14px Inter';
+        ctx.fillText(label, x2 + 10, y2);
+      };
+
+      useEffect(() => {
+        requestRef.current = requestAnimationFrame(animate);
+        return () => cancelAnimationFrame(requestRef.current);
+      }, [radius, velocity]);
+
+      return (
+        <div ref={containerRef} className="w-full h-full bg-slate-900 rounded-lg overflow-hidden">
+          <canvas ref={canvasRef} className="block" />
+        </div>
+      );
+    };
+
+    // --- 播放控制按钮组件 ---
+    const Controls = ({ isPlaying, togglePlay, reset }) => (
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-4">
+        <button onClick={togglePlay} className="flex items-center justify-center w-12 h-12 bg-cyan-600 hover:bg-cyan-500 rounded-full text-white shadow-lg transition-transform active:scale-95">
+          {isPlaying ? <Icons.Pause /> : <Icons.Play className="ml-1"/>}
+        </button>
+        <button onClick={reset} className="flex items-center justify-center w-12 h-12 bg-slate-600 hover:bg-slate-500 rounded-full text-white shadow-lg transition-transform active:scale-95">
+          <Icons.RotateCcw />
+        </button>
+      </div>
+    );
+
+    // ==========================================
+    // 5. App 主界面
+    // ==========================================
+    function App() {
+      const [activeId, setActiveId] = useState('FREE_FALL');
+      const [sidebarOpen, setSidebarOpen] = useState(false);
+      const [params, setParams] = useState(() => {
+        const init = {};
+        SIMULATIONS.forEach(sim => sim.variables.forEach(v => init[`${sim.id}_${v.key}`] = v.defaultValue));
+        return init;
+      });
+
+      const activeSim = SIMULATIONS.find(s => s.id === activeId);
+      
+      const currentParams = useMemo(() => {
+        const p = {};
+        activeSim.variables.forEach(v => p[v.key] = params[`${activeId}_${v.key}`]);
+        return p;
+      }, [activeId, params]);
+
+      const updateParam = (key, val) => {
+        setParams(prev => ({ ...prev, [`${activeId}_${key}`]: parseFloat(val) }));
+      };
+
+      return (
+        <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden">
+          
+          {/* 侧边栏 */}
+          <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-800 border-r border-slate-700 transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 flex flex-col shadow-2xl md:shadow-none`}>
+            <div className="p-4 border-b border-slate-700 flex items-center justify-between bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <Icons.Activity className="text-cyan-400" />
+                <span className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">PhysicsViz</span>
+              </div>
+              <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white"><Icons.X /></button>
+            </div>
+            
+            <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
+              {SIMULATIONS.map(sim => (
+                <button 
+                  key={sim.id}
+                  onClick={() => { setActiveId(sim.id); setSidebarOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg flex items-center gap-3 transition-all ${activeId === sim.id ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/50 shadow-sm' : 'hover:bg-slate-700 text-slate-400 hover:text-slate-200'}`}
+                >
+                  {sim.id === 'FREE_FALL' && <Icons.MoveDown size={18}/>}
+                  {sim.id === 'PROJECTILE' && <Icons.Send size={18}/>}
+                  {sim.id === 'PENDULUM' && <Icons.RefreshCcw size={18}/>}
+                  {sim.id === 'SPRING' && <Icons.Waves size={18}/>}
+                  {sim.id === 'CIRCULAR' && <Icons.CircleDot size={18}/>}
+                  <div className="flex flex-col">
+                    <span className="font-medium text-sm">{sim.name}</span>
+                    <span className="text-[10px] opacity-60 uppercase tracking-wider">{sim.nameEn}</span>
+                  </div>
+                </button>
+              ))}
+            </nav>
+            
+            <div className="p-4 border-t border-slate-700 text-xs text-slate-500 text-center">
+              Simple Physics Visualization
+            </div>
+          </div>
+
+          {/* 遮罩 */}
+          {sidebarOpen && <div className="fixed inset-0 z-40 bg-black/60 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />}
+
+          {/* 主内容 */}
+          <main className="flex-1 flex flex-col min-w-0 bg-slate-950">
+            {/* Header */}
+            <header className="h-16 bg-slate-900/80 backdrop-blur border-b border-slate-700 flex items-center px-4 justify-between shrink-0 sticky top-0 z-30">
+              <div className="flex items-center gap-3">
+                <button onClick={() => setSidebarOpen(true)} className="md:hidden text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800"><Icons.Menu /></button>
+                <h1 className="text-lg font-semibold tracking-tight">{activeSim.name}</h1>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-full border border-slate-700/50 shadow-sm">
+                <Icons.BookOpen size={14} className="text-cyan-400"/>
+                <span className="text-sm font-mono text-cyan-100 font-medium">{activeSim.formula}</span>
+              </div>
+            </header>
+
+            {/* 内容网格 */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Canvas 区域 */}
+              <div className="lg:col-span-2 bg-slate-900 rounded-xl border border-slate-800 shadow-xl flex flex-col min-h-[400px] relative overflow-hidden group">
+                <div className="absolute top-4 left-4 z-10 px-2.5 py-1 bg-black/40 rounded-full text-xs text-slate-400 backdrop-blur border border-white/5 font-medium tracking-wide pointer-events-none select-none">交互演示区</div>
+                {activeId === 'FREE_FALL' && <FreeFallSimulation params={currentParams} />}
+                {activeId === 'PROJECTILE' && <ProjectileSimulation params={currentParams} />}
+                {activeId === 'PENDULUM' && <PendulumSimulation params={currentParams} />}
+                {activeId === 'SPRING' && <SpringSimulation params={currentParams} />}
+                {activeId === 'CIRCULAR' && <CircularSimulation params={currentParams} />}
+              </div>
+
+              {/* 控制面板 */}
+              <div className="space-y-6 flex flex-col">
+                <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 shadow-lg">
+                  <div className="flex items-center gap-2 mb-5 text-cyan-400 border-b border-slate-800 pb-3">
+                    <Icons.Settings2 size={18} />
+                    <span className="font-semibold text-sm uppercase tracking-wider">参数设置</span>
+                  </div>
+                  <div className="space-y-6">
+                    {activeSim.variables.map(v => (
+                      <div key={v.key} className="group">
+                        <div className="flex justify-between text-sm mb-2">
+                          <label className="text-slate-400 group-hover:text-slate-200 transition-colors">{v.label}</label>
+                          <span className="font-mono text-cyan-400 bg-cyan-950/30 px-1.5 rounded text-xs py-0.5">{currentParams[v.key]} {v.unit}</span>
+                        </div>
+                        <input 
+                          type="range" className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                          min={v.min} max={v.max} step={v.step}
+                          value={currentParams[v.key]}
+                          onChange={(e) => updateParam(v.key, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 shadow-lg flex-1">
+                  <div className="flex items-center gap-2 mb-4 text-emerald-400 border-b border-slate-800 pb-3">
+                    <Icons.ArrowRight size={18} />
+                    <span className="font-semibold text-sm uppercase tracking-wider">原理简介</span>
+                  </div>
+                  <p className="text-slate-300 text-sm leading-7 text-justify">{activeSim.description}</p>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

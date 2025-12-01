@@ -1,0 +1,5 @@
+{
+  "name": "PhysicsViz",
+  "description": "Interactive physics visualizations for common formulas like Free Fall, Pendulum, and Circular Motion.",
+  "requestFramePermissions": []
+}
